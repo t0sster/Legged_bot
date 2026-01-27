@@ -100,3 +100,7 @@
   - Ethernet
 
 ---
+
+## Видео
+### Презентация
+https://docs.google.com/videos/d/16YamRF0b6J_BAz_VqXaFEOuxReoH1FsUntZCSLz1JO0/edit?usp=sharing
