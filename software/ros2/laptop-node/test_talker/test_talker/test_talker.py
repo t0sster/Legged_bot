@@ -8,18 +8,18 @@ class SinusoidalTrajectoryTalker(Node):
     def __init__(self):
         super().__init__('sinusoidal_trajectory_talker')
 
-        self.amplitude = 0.5 # амлпитуда синусоиды
-        self.frequency = 0.33 # частоты
+        self.amplitude = 1.0 # амлпитуда синусоиды
+        self.frequency = 0.5# частоты
         self.offset = 0.0 # начальное отклонение от 0
 
-        self.kp_little = 13.0
-        self.kd_little = 0.65
+        self.kp_little = 9.0
+        self.kd_little = 0.35
 
-        self.kp_big = 15.0
+        self.kp_big = 10.0
         self.kd_big = 0.65
 
         self.torque_ff = 0.0
-        self.rate_hz = 1000.0
+        self.rate_hz = 100.0
         self.num_motors = 10
 
         self.low_cmd_pub = self.create_publisher(LowCmd, '/low_level_command', 10)
@@ -30,6 +30,7 @@ class SinusoidalTrajectoryTalker(Node):
         )
 
         self.last_state = None
+        self._motors_enabled = False  # ← добавь эту строку
         self.timer = self.create_timer(1.0 / self.rate_hz, self.publish_message)
 
         self.get_logger().info(
@@ -56,11 +57,20 @@ class SinusoidalTrajectoryTalker(Node):
         return m
 
     def publish_message(self):
+        # Enable ОДИН раз, с правильными CAN ID
+        for can_id in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+            ctrl_msg = ControlCmd()
+            ctrl_msg.motor_id = can_id  # CAN ID, не индекс!
+            ctrl_msg.cmd = 252
+            self.control_cmd_pub.publish(ctrl_msg)
+        self._motors_enabled = True
+        self.get_logger().info("All motors enabled")
+        
         t = self.get_clock().now().nanoseconds / 1e9
 
         motor_cmds = []
         for i in range(self.num_motors):
-            if i in [1, 4, 5, 9]:
+            if i in [0, 4, 5, 9]:
                 kp = self.kp_big
                 kd = self.kd_big
             else:
@@ -81,13 +91,6 @@ class SinusoidalTrajectoryTalker(Node):
             f"Published LowCmd: t={t:.2f}, pos[0]={motor_cmds[0].position:.3f}, "
             f"vel[0]={motor_cmds[0].velocity:.3f}"
         )
-
-        for i in range(self.num_motors):
-            ctrl_msg = ControlCmd()
-            ctrl_msg.motor_id = i
-            ctrl_msg.cmd = 252
-            self.control_cmd_pub.publish(ctrl_msg)
-            self.get_logger().debug(f"Published ControlCmd: motor_id={i}, cmd=252")
 
 def main():
     rclpy.init()
