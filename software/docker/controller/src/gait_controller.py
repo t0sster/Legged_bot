@@ -19,6 +19,8 @@ class BaseGaitAdapter(ABC):
         self.kinematics = kinematics
         self.dt = dt
         self.obs_layout = 'legacy'
+        self.init_stance_half_width = 0.054
+        self.nominal_com_height = 0.34
 
     @abstractmethod
     def reset(self) -> None:
@@ -40,6 +42,8 @@ class BaseGaitAdapter(ABC):
 class LegacyLipAdapter(BaseGaitAdapter):
     def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
         super().__init__(node, kinematics, dt)
+        self.init_stance_half_width = 0.054
+        self.nominal_com_height = 0.34
 
         step_period = 25   # half-cycle in controller steps = 0.25 s at 100 Hz
         self.lipm = LIPMStepPlanner(
@@ -51,10 +55,10 @@ class LegacyLipAdapter(BaseGaitAdapter):
             stride_compensation_max_ratio=0.0,
             use_cmd_heading=False,
         )
-        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+        self.lipm.reset(init_stance_half_width=self.init_stance_half_width)
 
     def reset(self) -> None:
-        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+        self.lipm.reset(init_stance_half_width=self.init_stance_half_width)
 
     def build_observation_payload(
         self,
@@ -152,6 +156,8 @@ class LipPlayAdapter(BaseGaitAdapter):
         super().__init__(node, kinematics, dt)
         self.obs_layout = 'lip_play'
 
+        self.init_stance_half_width = 0.054
+        self.nominal_com_height = 0.25
         self._base_height_command = 0.25
         self._dstep_width = 0.24
 
@@ -175,10 +181,10 @@ class LipPlayAdapter(BaseGaitAdapter):
             use_cmd_heading=True,
             heading_speed_eps=1e-3,
         )
-        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+        self.lipm.reset(init_stance_half_width=self.init_stance_half_width)
 
     def reset(self) -> None:
-        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+        self.lipm.reset(init_stance_half_width=self.init_stance_half_width)
 
     def build_observation_payload(
         self,
@@ -257,9 +263,6 @@ class GaitAdapterFactory:
 
 
 class GaitController(Node):
-    # BD-specific constants
-    _INIT_STANCE_HALF_WIDTH = 0.054   # half hip-to-hip distance [m]
-    _COM_HEIGHT_NOMINAL     = 0.34    # nominal CoM height above ground [m]
     # Velocity estimation: low-pass decay on integrated accelerometer velocity.
     # Reduces drift while preserving short-term dynamics.
     _VEL_DECAY             = 0.98
@@ -305,7 +308,7 @@ class GaitController(Node):
         self._dt            = dt
         self._base_vel_world = np.zeros(3, dtype=np.float64)
         self._base_pos_world = np.zeros(3, dtype=np.float64)
-        self._base_pos_world[2] = self._COM_HEIGHT_NOMINAL  # start at nominal height
+        self._base_pos_world[2] = self.gait_adapter.nominal_com_height  # start at nominal height
 
         self.first_state_received = False
         self._step_count = 0
@@ -458,7 +461,7 @@ class GaitController(Node):
         self._base_pos_world += self._base_vel_world * self._dt
 
         # Keep z at nominal CoM height (flat ground assumption)
-        self._base_pos_world[2] = self._COM_HEIGHT_NOMINAL
+        self._base_pos_world[2] = self.gait_adapter.nominal_com_height
 
 
     def publish_lowcmd_action(self, action: np.ndarray):

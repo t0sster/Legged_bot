@@ -29,7 +29,8 @@ RUN mkdir -p /opt/blas-libs && \
     cp /usr/lib/x86_64-linux-gnu/liblapack.so.3* /opt/blas-libs/ && \
     cp /usr/lib/x86_64-linux-gnu/libgfortran.so.5* /opt/blas-libs/ || true
 
-ENV LD_LIBRARY_PATH=/opt/blas-libs:${LD_LIBRARY_PATH:-}
+ENV LD_LIBRARY_PATH=/opt/blas-libs
+ENV LD_LIBRARY_PATH=/opt/blas-libs:$LD_LIBRARY_PATH
 
 RUN pip3 install --no-cache-dir --break-system-packages \
     empy==3.3.4 \
