@@ -23,6 +23,10 @@ class LIPMStepPlanner:
         step_period: int = 25,
         dstep_width: float = 0.24,
         dstep_length: float = 0.05,
+        stride_compensation_gain: float = 0.0,
+        stride_compensation_max_ratio: float = 0.0,
+        use_cmd_heading: bool = False,
+        heading_speed_eps: float = 1e-3,
         g: float = 9.81,
     ):
 
@@ -31,6 +35,10 @@ class LIPMStepPlanner:
         self.full_period  = 2 * step_period
         self.dstep_width  = dstep_width
         self.dstep_length = dstep_length
+        self.stride_compensation_gain = stride_compensation_gain
+        self.stride_compensation_max_ratio = stride_compensation_max_ratio
+        self.use_cmd_heading = use_cmd_heading
+        self.heading_speed_eps = heading_speed_eps
         self.g            = g
 
         # Phase and timing state
@@ -56,6 +64,7 @@ class LIPMStepPlanner:
         # Base velocity estimate (updated externally each tick)
         self.base_vel_world  = np.zeros(3)
         self.base_pos_world  = np.zeros(3)
+        self.base_heading = 0.0
 
     def reset(self, init_stance_half_width: float = 0.054, init_heading: float = 0.0):
         """Reset planner to initial double-support stance."""
@@ -74,6 +83,16 @@ class LIPMStepPlanner:
         self.base_vel_world  = np.zeros(3)
         self.base_pos_world  = np.zeros(3)
 
+    def set_step_period_steps(self, step_period: int) -> None:
+        step_period = int(max(1, step_period))
+        if step_period == self.step_period:
+            return
+        self.step_period = step_period
+        self.full_period = 2 * step_period
+        # Keep counters consistent with the new period.
+        self.phase_count = int(self.phase * self.full_period) % self.full_period
+        self.update_count = min(self.update_count, self.step_period)
+
     # Main update
     def update(
         self,
@@ -90,6 +109,7 @@ class LIPMStepPlanner:
 
         self.base_pos_world = base_pos.copy()
         self.base_vel_world = base_vel.copy()
+        self.base_heading = float(base_heading)
 
         # Phase update 
         self.phase_count  += 1
@@ -196,7 +216,18 @@ class LIPMStepPlanner:
         T      = self.step_period * self.dt
         w      = self.w
         CoM    = self.CoM
-        theta  = float(np.arctan2(commands[1], commands[0]))
+        cmd_vel = commands[:2]
+        cmd_wz = float(commands[2])
+        cmd_speed = float(np.linalg.norm(cmd_vel))
+        if cmd_speed > self.heading_speed_eps:
+            step_heading_b = float(np.arctan2(cmd_vel[1], cmd_vel[0]))
+        else:
+            step_heading_b = 0.0
+
+        if self.use_cmd_heading:
+            heading_target = _wrap_to_pi(base_heading + cmd_wz * T)
+        else:
+            heading_target = base_heading
 
         # Support foot position
         swing_idx   = int(np.argmax(self.foot_on_motion))
@@ -221,8 +252,25 @@ class LIPMStepPlanner:
         eICP_y = y_f + support_pos_3d[1] + vy_f / w
 
         # XCoM offsets
-        speed = float(np.linalg.norm(commands[:2]))
+        speed = cmd_speed
         dlen  = speed * T
+
+        # Asymmetric stride compensation along heading
+        if self.stride_compensation_gain > 0.0:
+            c, s = np.cos(base_heading), np.sin(base_heading)
+            rot_inv = np.array([[c, s], [-s, c]])
+            foot_pos_b = np.zeros((2, 2), dtype=np.float64)
+            foot_pos_b[0] = rot_inv @ (self.current_step[0, :2] - base_pos[:2])
+            foot_pos_b[1] = rot_inv @ (self.current_step[1, :2] - base_pos[:2])
+
+            heading_dir_b = np.array([np.cos(step_heading_b), np.sin(step_heading_b)], dtype=np.float64)
+            speed_scale = abs(cmd_vel[0]) / (abs(cmd_vel[0]) + abs(cmd_vel[1]) + 1e-6)
+            delta_along = float((foot_pos_b[0] - foot_pos_b[1]).dot(heading_dir_b))
+            comp = self.stride_compensation_gain * speed_scale * delta_along
+            comp_limit = self.stride_compensation_max_ratio * max(dlen, 0.0)
+            comp = float(np.clip(comp, -comp_limit, comp_limit))
+            swing_sign = 1.0 if self.foot_on_motion[1] else -1.0
+            dlen = max(0.0, dlen + swing_sign * comp)
         b_x   = dlen / (np.exp(T * w) - 1 + 1e-6)
         b_y   = self.dstep_width / (np.exp(T * w) + 1 + 1e-6)
 
@@ -231,7 +279,7 @@ class LIPMStepPlanner:
         oy_left  =  b_y
 
         # Rotate offsets from heading-aligned to world frame
-        c, s = np.cos(theta), np.sin(theta)
+        c, s = np.cos(step_heading_b), np.sin(step_heading_b)
 
         def _rotate(ox_h, oy_h):
             return c * ox_h - s * oy_h, s * ox_h + c * oy_h
@@ -241,9 +289,9 @@ class LIPMStepPlanner:
 
         new_cmds = self.step_commands.copy()
         if swing_idx == 0:   # right is swing
-            new_cmds[0] = [eICP_x + ox_r, eICP_y + oy_r, theta]
+            new_cmds[0] = [eICP_x + ox_r, eICP_y + oy_r, heading_target]
         else:                 # left is swing
-            new_cmds[1] = [eICP_x + ox_l, eICP_y + oy_l, theta]
+            new_cmds[1] = [eICP_x + ox_l, eICP_y + oy_l, heading_target]
 
         return new_cmds
 

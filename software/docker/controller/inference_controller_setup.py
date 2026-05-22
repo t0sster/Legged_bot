@@ -17,6 +17,11 @@ def main():
                     type=str,
                     default="./src/model/tinker",
                     help="define inference model path")
+    ap.add_argument("-g", "--gait",
+                    type=str,
+                    default="legacy",
+                    choices=["legacy", "lip_play"],
+                    help="select gait adapter: legacy or lip_play")
     args = ap.parse_args()
 
     rclpy.init()
@@ -25,7 +30,8 @@ def main():
         controller = GaitController(
             # adapter_type = args.object,
             device_type = args.device,
-            model_path = args.path
+            model_path = args.path,
+            gait_mode = args.gait
         )
 
         executor = MultiThreadedExecutor()

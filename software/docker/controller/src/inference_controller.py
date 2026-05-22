@@ -25,15 +25,19 @@ class InferenceController:
             f'ONNX loaded: input={self.policy_input_name} shape={inp.shape}')
 
         # Infer expected observation size from the ONNX model
-        self._expected_obs_size = int(inp.shape[0])
-        # Infer whether the model expects a batch dim (old policy: [1, N]) or flat (new: [N])
         self._obs_needs_batch = (len(inp.shape) == 2)
+        if self._obs_needs_batch:
+            self._expected_obs_size = int(inp.shape[1])
+        else:
+            self._expected_obs_size = int(inp.shape[0])
 
         self.actions      = np.zeros(self.actions_size)
         self.observations = np.zeros(self._expected_obs_size)
         self._first_obs_logged = False
         self._first_act_logged = False
         self._pending_debug_lines = []
+        self.observation_layout = 'legacy'
+        self._default_base_height = 0.25
 
         self.node.get_logger().info('Inference controller initialised')
 
@@ -63,6 +67,12 @@ class InferenceController:
             f'Config loaded: obs_size={self.observations_size} '
             f'actions_size={self.actions_size}')
 
+    def set_observation_layout(self, layout: str) -> None:
+        self.observation_layout = layout
+
+    def set_default_base_height(self, height: float) -> None:
+        self._default_base_height = float(height)
+
     def compute_observation(
         self,
         imu_quat:            np.ndarray,   # (4,) wxyz
@@ -77,8 +87,12 @@ class InferenceController:
         step_cmd_left:       np.ndarray,   # (4,)
         phase_sin:           float,
         phase_cos:           float,
+        base_height_command: float | None = None,
+        gait_phase:          np.ndarray | None = None,
+        obs_layout:          str | None = None,
     ):
         try:
+            layout = obs_layout or self.observation_layout
             # Quaternion wxyz -> xyzw for scipy
             q_xyzw = np.array(
                 [imu_quat[1], imu_quat[2], imu_quat[3], imu_quat[0]],
@@ -111,20 +125,44 @@ class InferenceController:
             scaled_dof_vel = (noisy_dof_vel * self.obs_scales['dof_vel']).astype(np.float32)
             scaled_ang_vel = (noisy_ang_vel  * self.obs_scales['ang_vel']).astype(np.float32)
 
-            obs = np.concatenate([
-                [base_heading],         # 1
-                scaled_ang_vel,         # 3
-                projected_gravity,      # 3
-                foot_states_right,      # 4
-                foot_states_left,       # 4
-                step_cmd_right,         # 4
-                step_cmd_left,          # 4
-                scaled_commands,        # 3
-                [phase_sin],            # 1
-                [phase_cos],            # 1
-                scaled_dof_pos,         # 10
-                scaled_dof_vel,         # 10
-            ]).astype(np.float32)
+            if layout == 'legacy':
+                obs = np.concatenate([
+                    [base_heading],         # 1
+                    scaled_ang_vel,         # 3
+                    projected_gravity,      # 3
+                    foot_states_right,      # 4
+                    foot_states_left,       # 4
+                    step_cmd_right,         # 4
+                    step_cmd_left,          # 4
+                    scaled_commands,        # 3
+                    [phase_sin],            # 1
+                    [phase_cos],            # 1
+                    scaled_dof_pos,         # 10
+                    scaled_dof_vel,         # 10
+                ]).astype(np.float32)
+            elif layout == 'lip_play':
+                step_right = step_cmd_right[:3].astype(np.float32)
+                step_left = step_cmd_left[:3].astype(np.float32)
+                if gait_phase is None:
+                    gait_phase = np.array([phase_sin, phase_cos], dtype=np.float32)
+                if base_height_command is None:
+                    base_height_command = self._default_base_height
+                obs = np.concatenate([
+                    [base_heading],         # 1
+                    scaled_ang_vel,         # 3
+                    projected_gravity,      # 3
+                    foot_states_right,      # 4
+                    foot_states_left,       # 4
+                    step_right,             # 3
+                    step_left,              # 3
+                    scaled_commands,        # 3
+                    [base_height_command],  # 1
+                    gait_phase,             # 2
+                    scaled_dof_pos,         # 10
+                    scaled_dof_vel,         # 10
+                ]).astype(np.float32)
+            else:
+                raise ValueError(f'Unknown observation layout: {layout}')
 
             self.observations = obs
 

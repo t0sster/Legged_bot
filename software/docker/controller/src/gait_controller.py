@@ -2,6 +2,7 @@ import os
 import numpy as np
 import rclpy
 import rclpy.parameter
+from abc import ABC, abstractmethod
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
 
@@ -12,6 +13,249 @@ from .lipm_planner import LIPMStepPlanner
 from tinker_msgs.msg import LowState, LowCmd, MotorCmd
 
 
+class BaseGaitAdapter(ABC):
+    def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
+        self.node = node
+        self.kinematics = kinematics
+        self.dt = dt
+        self.obs_layout = 'legacy'
+
+    @abstractmethod
+    def reset(self) -> None:
+        pass
+
+    @abstractmethod
+    def build_observation_payload(
+        self,
+        base_pos: np.ndarray,
+        base_vel: np.ndarray,
+        base_heading: float,
+        imu_quat: np.ndarray,
+        commands: np.ndarray,
+        joint_positions: np.ndarray,
+    ) -> dict:
+        pass
+
+
+class LegacyLipAdapter(BaseGaitAdapter):
+    def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
+        super().__init__(node, kinematics, dt)
+
+        step_period = 25   # half-cycle in controller steps = 0.25 s at 100 Hz
+        self.lipm = LIPMStepPlanner(
+            dt=dt,
+            step_period=step_period,
+            dstep_width=0.24,
+            dstep_length=0.05,
+            stride_compensation_gain=0.0,
+            stride_compensation_max_ratio=0.0,
+            use_cmd_heading=False,
+        )
+        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+
+    def reset(self) -> None:
+        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+
+    def build_observation_payload(
+        self,
+        base_pos: np.ndarray,
+        base_vel: np.ndarray,
+        base_heading: float,
+        imu_quat: np.ndarray,
+        commands: np.ndarray,
+        joint_positions: np.ndarray,
+    ) -> dict:
+        foot_right, foot_left, _, _ = self.kinematics.compute(joint_positions)
+
+        q_xyzw = np.array(
+            [imu_quat[1], imu_quat[2], imu_quat[3], imu_quat[0]], dtype=np.float64
+        )
+        R_base = R.from_quat(q_xyzw).as_matrix()
+
+        foot_pos_right_world = base_pos + R_base @ foot_right[:3]
+        foot_pos_left_world = base_pos + R_base @ foot_left[:3]
+        foot_head_right_world = float(foot_right[3]) + base_heading
+        foot_head_left_world = float(foot_left[3]) + base_heading
+
+        com_body = self.kinematics.compute_com(joint_positions).astype(np.float64)
+        com_world = base_pos + R_base @ com_body
+
+        self.lipm.update(
+            base_pos=base_pos.astype(float),
+            base_vel=base_vel.astype(float),
+            base_heading=base_heading,
+            commands=commands.astype(float),
+            foot_pos_right_world=foot_pos_right_world.astype(float),
+            foot_pos_left_world=foot_pos_left_world.astype(float),
+            foot_heading_right=foot_head_right_world,
+            foot_heading_left=foot_head_left_world,
+            com=com_world,
+        )
+
+        step_cmd_right, step_cmd_left = self.lipm.get_step_commands_body(
+            base_pos.astype(float), q_xyzw
+        )
+        phase_sin, phase_cos = self.lipm.get_phase_obs()
+
+        return {
+            'foot_states_right': foot_right,
+            'foot_states_left': foot_left,
+            'step_cmd_right': step_cmd_right,
+            'step_cmd_left': step_cmd_left,
+            'phase_sin': phase_sin,
+            'phase_cos': phase_cos,
+            'obs_layout': 'legacy',
+        }
+
+
+class GaitCommandSampler:
+    def __init__(
+        self,
+        freq_range: tuple[float, float],
+        offset_range: tuple[float, float],
+        duration_range: tuple[float, float],
+        resample_time_s: float,
+        randomize: bool = True,
+    ):
+        self.freq_range = freq_range
+        self.offset_range = offset_range
+        self.duration_range = duration_range
+        self.resample_time_s = resample_time_s
+        self.randomize = randomize
+        self._elapsed = 0.0
+
+        self.frequency = 0.5 * sum(freq_range)
+        self.offset = 0.5 * sum(offset_range)
+        self.duration = 0.5 * sum(duration_range)
+
+    def update(self, dt: float) -> bool:
+        self._elapsed += dt
+        if self._elapsed < self.resample_time_s:
+            return False
+        self._elapsed = 0.0
+        self._resample()
+        return True
+
+    def _resample(self) -> None:
+        if self.randomize:
+            self.frequency = np.random.uniform(*self.freq_range)
+            self.offset = np.random.uniform(*self.offset_range)
+            self.duration = np.random.uniform(*self.duration_range)
+        else:
+            self.frequency = 0.5 * sum(self.freq_range)
+            self.offset = 0.5 * sum(self.offset_range)
+            self.duration = 0.5 * sum(self.duration_range)
+
+
+class LipPlayAdapter(BaseGaitAdapter):
+    def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
+        super().__init__(node, kinematics, dt)
+        self.obs_layout = 'lip_play'
+
+        self._base_height_command = 0.25
+        self._dstep_width = 0.24
+
+        self.gait_cmd = GaitCommandSampler(
+            freq_range=(1.0, 2.0),
+            offset_range=(0.5, 0.5),
+            duration_range=(0.5, 0.5),
+            resample_time_s=5.0,
+            randomize=True,
+        )
+
+        initial_period_s = 0.5 / max(self.gait_cmd.frequency, 1e-3)
+        step_period_steps = int(round(initial_period_s / dt))
+        self.lipm = LIPMStepPlanner(
+            dt=dt,
+            step_period=step_period_steps,
+            dstep_width=self._dstep_width,
+            dstep_length=0.05,
+            stride_compensation_gain=0.5,
+            stride_compensation_max_ratio=0.5,
+            use_cmd_heading=True,
+            heading_speed_eps=1e-3,
+        )
+        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+
+    def reset(self) -> None:
+        self.lipm.reset(init_stance_half_width=GaitController._INIT_STANCE_HALF_WIDTH)
+
+    def build_observation_payload(
+        self,
+        base_pos: np.ndarray,
+        base_vel: np.ndarray,
+        base_heading: float,
+        imu_quat: np.ndarray,
+        commands: np.ndarray,
+        joint_positions: np.ndarray,
+    ) -> dict:
+        if self.gait_cmd.update(self.dt):
+            period_s = 0.5 / max(self.gait_cmd.frequency, 1e-3)
+            period_steps = int(round(period_s / self.dt))
+            self.lipm.set_step_period_steps(period_steps)
+
+        foot_right, foot_left, _, _ = self.kinematics.compute(joint_positions)
+
+        q_xyzw = np.array(
+            [imu_quat[1], imu_quat[2], imu_quat[3], imu_quat[0]], dtype=np.float64
+        )
+        R_base = R.from_quat(q_xyzw).as_matrix()
+
+        foot_pos_right_world = base_pos + R_base @ foot_right[:3]
+        foot_pos_left_world = base_pos + R_base @ foot_left[:3]
+        foot_head_right_world = float(foot_right[3]) + base_heading
+        foot_head_left_world = float(foot_left[3]) + base_heading
+
+        com_body = self.kinematics.compute_com(joint_positions).astype(np.float64)
+        com_world = base_pos + R_base @ com_body
+
+        self.lipm.update(
+            base_pos=base_pos.astype(float),
+            base_vel=base_vel.astype(float),
+            base_heading=base_heading,
+            commands=commands.astype(float),
+            foot_pos_right_world=foot_pos_right_world.astype(float),
+            foot_pos_left_world=foot_pos_left_world.astype(float),
+            foot_heading_right=foot_head_right_world,
+            foot_heading_left=foot_head_left_world,
+            com=com_world,
+        )
+
+        step_cmd_right, step_cmd_left = self.lipm.get_step_commands_body(
+            base_pos.astype(float), q_xyzw
+        )
+        phase_sin, phase_cos = self.lipm.get_phase_obs()
+
+        step_cmd_right_3 = np.array([step_cmd_right[0], step_cmd_right[1], step_cmd_right[3]], dtype=np.float32)
+        step_cmd_left_3 = np.array([step_cmd_left[0], step_cmd_left[1], step_cmd_left[3]], dtype=np.float32)
+
+        return {
+            'foot_states_right': foot_right,
+            'foot_states_left': foot_left,
+            'step_cmd_right': step_cmd_right_3,
+            'step_cmd_left': step_cmd_left_3,
+            'phase_sin': phase_sin,
+            'phase_cos': phase_cos,
+            'base_height_command': self._base_height_command,
+            'gait_phase': np.array([phase_sin, phase_cos], dtype=np.float32),
+            'obs_layout': 'lip_play',
+        }
+
+
+class GaitAdapterFactory:
+    _ADAPTERS = {
+        'legacy': LegacyLipAdapter,
+        'lip_play': LipPlayAdapter,
+    }
+
+    @staticmethod
+    def create(adapter_type: str, node: Node, kinematics: BDKinematics, dt: float) -> BaseGaitAdapter:
+        adapter_class = GaitAdapterFactory._ADAPTERS.get(adapter_type.lower())
+        if adapter_class is None:
+            raise ValueError(f'Unknown gait adapter type: {adapter_type}')
+        return adapter_class(node=node, kinematics=kinematics, dt=dt)
+
+
 class GaitController(Node):
     # BD-specific constants
     _INIT_STANCE_HALF_WIDTH = 0.054   # half hip-to-hip distance [m]
@@ -20,7 +264,7 @@ class GaitController(Node):
     # Reduces drift while preserving short-term dynamics.
     _VEL_DECAY             = 0.98
 
-    def __init__(self, device_type: str, model_path: str):
+    def __init__(self, device_type: str, model_path: str, gait_mode: str = 'legacy'):
         super().__init__(
             'gait_controller',
             parameter_overrides=[
@@ -40,13 +284,13 @@ class GaitController(Node):
         # Forward kinematics (Pinocchio)
         self.kinematics = BDKinematics()
 
-        # LIPM step planner
-        loop_freq   = float(self.inference_controller.loop_frequency)
-        dt          = 1.0 / loop_freq
-        step_period = 25   # half-cycle in controller steps = 0.25 s at 100 Hz
-        self.lipm   = LIPMStepPlanner(dt=dt, step_period=step_period,
-                                      dstep_width=0.24, dstep_length=0.05)
-        self.lipm.reset(init_stance_half_width=self._INIT_STANCE_HALF_WIDTH)
+        # Gait adapter (legacy or lip-play)
+        loop_freq = float(self.inference_controller.loop_frequency)
+        dt = 1.0 / loop_freq
+        self.gait_adapter = GaitAdapterFactory.create(
+            gait_mode, node=self, kinematics=self.kinematics, dt=dt
+        )
+        self.inference_controller.set_observation_layout(self.gait_adapter.obs_layout)
 
         # Sensor state
         self.imu_quat  = np.array([1., 0., 0., 0.], dtype=np.float32)  # wxyz
@@ -116,36 +360,14 @@ class GaitController(Node):
             # Base heading (yaw from IMU RPY, published by sim)
             base_heading = float(self.rpy[2])
 
-            # Forward kinematics
-            foot_right, foot_left, hip_right, hip_left = self.kinematics.compute(self.positions)
-
-            # Convert foot states (body-frame from FK) to world-frame for LIPM
-            R_base = R.from_quat(q_xyzw).as_matrix()
-            foot_pos_right_world = base_pos + R_base @ foot_right[:3]
-            foot_pos_left_world  = base_pos + R_base @ foot_left[:3]
-            foot_head_right_world = float(foot_right[3]) + base_heading
-            foot_head_left_world  = float(foot_left[3]) + base_heading
-
-            # Actual CoM in world frame (weighted rigid-body sum via Pinocchio)
-            com_body  = self.kinematics.compute_com(self.positions).astype(np.float64)
-            com_world = base_pos + R_base @ com_body
-
-            # LIPM step planner update
-            self.lipm.update(
-                base_pos=base_pos.astype(float),
-                base_vel=base_vel.astype(float),
+            obs_payload = self.gait_adapter.build_observation_payload(
+                base_pos=base_pos,
+                base_vel=base_vel,
                 base_heading=base_heading,
-                commands=self.commands.astype(float),
-                foot_pos_right_world=foot_pos_right_world.astype(float),
-                foot_pos_left_world=foot_pos_left_world.astype(float),
-                foot_heading_right=foot_head_right_world,
-                foot_heading_left=foot_head_left_world,
-                com=com_world,
+                imu_quat=self.imu_quat,
+                commands=self.commands,
+                joint_positions=self.positions,
             )
-
-            step_cmd_right, step_cmd_left = self.lipm.get_step_commands_body(base_pos.astype(float), q_xyzw)
-
-            phase_sin, phase_cos = self.lipm.get_phase_obs()
 
             # Observations
             self.inference_controller.compute_observation(
@@ -155,13 +377,7 @@ class GaitController(Node):
                 joint_positions=self.positions,
                 joint_velocities=self.velocities,
                 commands=self.commands,
-                foot_states_right=foot_right,
-                foot_states_left=foot_left,
-                step_cmd_right=step_cmd_right,
-                step_cmd_left=step_cmd_left,
-                phase_sin=phase_sin,
-                phase_cos=phase_cos,
-                
+                **obs_payload,
             )
 
             # self._log_observations(
