@@ -153,8 +153,8 @@ class InferenceController:
                     projected_gravity,      # 3
                     foot_states_right,      # 4
                     foot_states_left,       # 4
-                    step_right,             # 3
-                    step_left,              # 3
+                    step_right,             # 4
+                    step_left,              # 4
                     scaled_commands,        # 3
                     [base_height_command],  # 1
                     gait_phase,             # 2

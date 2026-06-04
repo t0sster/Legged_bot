@@ -12,25 +12,9 @@
 ```bash
 docker run -it --network host --ipc host \
   -e DISPLAY=$DISPLAY \
-  -e CYCLONEDDS_URI=file:///tmp/cyclone.xml \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu \
-  -v /tmp/cyclone.xml:/tmp/cyclone.xml \
-  --device /dev/dri --group-add video \
+  --device /dev/dri \
+  --group-add video \
   sim2sim:mujoco
 
-```
-
-## Быстрый запуск с локальными изменениями
-
-Скрипт переиспользует уже собранный образ и монтирует локальные файлы в контейнер:
-
-```bash
-./run.sh
-```
-
-Чтобы передать аргументы в `sim_mujoco.py`, просто добавь их в конце:
-
-```bash
-./run.sh --help
 ```

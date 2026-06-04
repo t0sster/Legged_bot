@@ -23,17 +23,3 @@ docker run -it --net host --ipc host --gpus all \
 
 ```
 
-### Fast run with local changes
-
-Use the helper script to reuse the existing image and mount your local code into the container:
-
-```bash
-./run.sh
-```
-
-To pass controller args (e.g. device or model path):
-
-```bash
-./run.sh --gait lip_play --device keyboard --path ./src/model/tinker
-```
-

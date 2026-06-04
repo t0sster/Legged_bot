@@ -1,10 +1,6 @@
 ARG ROS_DISTRO=jazzy
 FROM osrf/ros:${ROS_DISTRO}-desktop
 
-ARG ROS_DISTRO=jazzy
-ENV ROS_DISTRO=${ROS_DISTRO}
-ENV ROS_DOMAIN_ID=5
-
 RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
@@ -19,7 +15,6 @@ RUN apt-get update && apt-get install -y \
     ros-${ROS_DISTRO}-ament-cmake \
     ros-${ROS_DISTRO}-ros-workspace \
     ros-${ROS_DISTRO}-pinocchio \
-    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages \
@@ -36,13 +31,11 @@ WORKDIR /workspace
 
 COPY . /workspace/
 
-RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
+RUN . /opt/ros/$ROS_DISTRO/setup.sh && \
     cd /workspace/tinker_msgs && \
     colcon build --symlink-install
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-RUN chmod +x /workspace/inference_controller_setup.py
+RUN echo "source /workspace/tinker_msgs/install/setup.bash" >> ~/.bashrc && \
+    echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc
 
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["python3", "/workspace/inference_controller_setup.py"]
+RUN chmod +x /workspace/inference_controller_setup.py
