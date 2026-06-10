@@ -9,7 +9,7 @@
 
 **Build container** from **/software/docker/controller/** path:
 ```bash
-docker build -t gait-controller:jazzy .
+docker build -t controller:jazzy .
 ```
 
 then **run it**:
@@ -19,7 +19,8 @@ docker run -it --net host --ipc host --gpus all \
   -e CYCLONEDDS_URI=file:///tmp/cyclone.xml \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /tmp/cyclone.xml:/tmp/cyclone.xml \
-  gait_controller:jazzy
-
+  controller:jazzy
 ```
 
+For the LIPM-based policy, launch `inference_controller_setup.py` with `--gait bd_lip`
+and the default model path `./src/model/BipeD`.

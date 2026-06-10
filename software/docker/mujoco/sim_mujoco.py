@@ -22,7 +22,7 @@ class MujocoSim(Node):
         self.velocities = np.zeros(10)
 
         self.actions = np.zeros(10)
-        self.init_ctrl = np.array([0.0, 0.08, 0.56, -1.12, -0.57, 0.0, -0.08, -0.56, 1.12, 0.57])
+        self.init_ctrl = np.array([0.0, 0.08, 0.56, 1.12, 0.57, 0.0, -0.08, -0.56, -1.12, -0.57])
         self.ctrl = self.init_ctrl.copy()
 
         self.IS_ACTIONS = False
@@ -50,10 +50,8 @@ class MujocoSim(Node):
 
 
     def cmd_callback(self, msg: LowCmd):
-        cmd = [msg.motor_cmd[i].position for i in range(10)]
-        for i in range(5):
-            self.actions[2 * i]     = cmd[i]
-            self.actions[2 * i + 1] = cmd[i + 5]
+        # LowCmd is published in left-leg-first order; MuJoCo actuators are also left-first.
+        self.actions[:] = [msg.motor_cmd[i].position for i in range(10)]
         self.IS_ACTIONS = True
 
 
@@ -85,7 +83,7 @@ class MujocoSim(Node):
                 self.ctrl = np.clip(self.actions, self.ctrl_range[:, 0], self.ctrl_range[:, 1])
                 self.data.ctrl[:] = self.ctrl
 
-            if self.data.qpos[2] < -0.35:
+            if self.data.qpos[2] < -0.32:
                 mujoco.mj_resetData(self.model, self.data)
                 self.data.qpos[7:17] = self.init_ctrl.copy()
                 self.data.ctrl[:] = self.init_ctrl.copy()
@@ -183,6 +181,6 @@ if __name__ == "__main__":
         print(f"Simulator script error: {e}")
 
     finally:
-        if 'mojoco_sim' in locals():
+        if 'mujoco_sim' in locals():
             mujoco_sim.shutdown()
         rclpy.shutdown()

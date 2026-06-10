@@ -41,12 +41,14 @@ class KeyboardDevice(BaseDevice):
         self.max_lateral_vel = 0.5
         self.max_angular_vel = 2.0
         self.max_heading = 3.14
+        self.height = 0.0
         self.min_height = 0.12
         self.max_height = 0.2
         self.paused = False
     
     def initialize(self):
         self.keyboard_listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+        self.keyboard_listener.start()
         
         self.node.get_logger().info('Keyboard device initialized')
 
@@ -111,7 +113,8 @@ class KeyboardDevice(BaseDevice):
         return self.commands
     
     def shutdown(self):
-        pass
+        if hasattr(self, "keyboard_listener"):
+            self.keyboard_listener.stop()
 
 
 class GamepadDevice(BaseDevice):
@@ -124,7 +127,7 @@ class GamepadDevice(BaseDevice):
         #     '/control/target',
         #     10
         # )
-        pass
+        self.commands = np.zeros(3)
 
         self.node.get_logger().info('Gamepad device initialized')
 
@@ -132,6 +135,29 @@ class GamepadDevice(BaseDevice):
         pass
 
     def shutdown(self):
-        self.node.destroy_subscription(self.target_subscriber)
-        self.shutdown()
+        if self.target_subscriber is not None:
+            self.node.destroy_subscription(self.target_subscriber)
 
+    def get_commands(self):
+        if self.commands is None:
+            self.commands = np.zeros(3)
+        return self.commands
+
+
+class FixedForwardDevice(BaseDevice):
+    def __init__(self, node: Node):
+        super().__init__(node)
+        self.commands = np.zeros(3)
+        self.forward_vel = 0.15
+
+    def initialize(self):
+        self.commands[:] = np.array([self.forward_vel, 0.0, 0.0], dtype=np.float32)
+        self.node.get_logger().info(
+            f'Fixed-forward device initialized: commands={self.commands.tolist()}'
+        )
+
+    def get_commands(self):
+        return self.commands
+
+    def shutdown(self):
+        pass

@@ -13,6 +13,10 @@ from .lipm_planner import LIPMStepPlanner
 from tinker_msgs.msg import LowState, LowCmd, MotorCmd
 
 
+def _wrap_to_pi(angle: float) -> float:
+    return float((angle + np.pi) % (2.0 * np.pi) - np.pi)
+
+
 class BaseGaitAdapter(ABC):
     def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
         self.node = node
@@ -20,7 +24,7 @@ class BaseGaitAdapter(ABC):
         self.dt = dt
         self.obs_layout = 'legacy'
         self.init_stance_half_width = 0.054
-        self.nominal_com_height = 0.34
+        self.nominal_com_height = 0.24
 
     @abstractmethod
     def reset(self) -> None:
@@ -151,15 +155,15 @@ class GaitCommandSampler:
             self.duration = 0.5 * sum(self.duration_range)
 
 
-class LipPlayAdapter(BaseGaitAdapter):
+class BDLipAdapter(BaseGaitAdapter):
     def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
         super().__init__(node, kinematics, dt)
-        self.obs_layout = 'lip_play'
+        self.obs_layout = 'bd_lip'
 
         self.init_stance_half_width = 0.054
-        self.nominal_com_height = 0.25
+        self.nominal_com_height = 0.36
         self._base_height_command = 0.25
-        self._dstep_width = 0.24
+        self._dstep_width = 0.20
 
         self.gait_cmd = GaitCommandSampler(
             freq_range=(1.0, 2.0),
@@ -227,31 +231,42 @@ class LipPlayAdapter(BaseGaitAdapter):
             com=com_world,
         )
 
-        step_cmd_right, step_cmd_left = self.lipm.get_step_commands_body(
-            base_pos.astype(float), q_xyzw
-        )
-        phase_sin, phase_cos = self.lipm.get_phase_obs()
+        step_cmd_right_world = self.lipm.step_commands[0].copy()
+        step_cmd_left_world = self.lipm.step_commands[1].copy()
 
-        step_cmd_right_3 = np.array([step_cmd_right[0], step_cmd_right[1], step_cmd_right[3]], dtype=np.float32)
-        step_cmd_left_3 = np.array([step_cmd_left[0], step_cmd_left[1], step_cmd_left[3]], dtype=np.float32)
+        def _step_command_rel(step_cmd_world: np.ndarray) -> np.ndarray:
+            rel_pos = R.from_quat(q_xyzw).inv().apply(
+                step_cmd_world[:3].astype(np.float64) - base_pos.astype(np.float64)
+            )
+            rel_yaw = _wrap_to_pi(float(step_cmd_world[2]) - base_heading)
+            return np.array([rel_pos[0], rel_pos[1], rel_pos[2], rel_yaw], dtype=np.float32)
+
+        foot_target_right = _step_command_rel(step_cmd_right_world)
+        foot_target_left = _step_command_rel(step_cmd_left_world)
+        phase_sin, phase_cos = self.lipm.get_phase_obs()
 
         return {
             'foot_states_right': foot_right,
             'foot_states_left': foot_left,
-            'step_cmd_right': step_cmd_right_3,
-            'step_cmd_left': step_cmd_left_3,
+            'foot_target_right': foot_target_right,
+            'foot_target_left': foot_target_left,
             'phase_sin': phase_sin,
             'phase_cos': phase_cos,
             'base_height_command': self._base_height_command,
             'gait_phase': np.array([phase_sin, phase_cos], dtype=np.float32),
-            'obs_layout': 'lip_play',
+            'obs_layout': 'bd_lip',
         }
+
+
+# Backwards-compatible alias for older launch scripts/configs.
+LipPlayAdapter = BDLipAdapter
 
 
 class GaitAdapterFactory:
     _ADAPTERS = {
         'legacy': LegacyLipAdapter,
-        'lip_play': LipPlayAdapter,
+        'bd_lip': BDLipAdapter,
+        'lip_play': BDLipAdapter,
     }
 
     @staticmethod
@@ -287,7 +302,7 @@ class GaitController(Node):
         # Forward kinematics (Pinocchio)
         self.kinematics = BDKinematics()
 
-        # Gait adapter (legacy or lip-play)
+        # Gait adapter (legacy or bd_lip)
         loop_freq = float(self.inference_controller.loop_frequency)
         dt = 1.0 / loop_freq
         self.gait_adapter = GaitAdapterFactory.create(
@@ -346,8 +361,6 @@ class GaitController(Node):
                 return
 
             self.commands = np.array(self.device.get_commands(), dtype=np.float32)
-            # TODO: replace with keyboard / joystick commands
-            self.commands = np.array([0.2, 0., 0.], dtype=np.float32)
 
             # State estimation
             self._update_velocity_estimate()

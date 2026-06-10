@@ -11,18 +11,22 @@ def main():
     ap.add_argument("-d", "--device",
                     type=str,
                     default="keyboard",
-                    choices=['keyboard', 'gamepad'],
-                    help="set input device: 'keyboard'/'gamepad' (default is keyboard)")
+                    choices=['keyboard', 'gamepad', 'fixed_forward'],
+                    help="set input device: 'keyboard'/'gamepad'/'fixed_forward' (default is keyboard)")
     ap.add_argument("-p", "--path",
                     type=str,
-                    default="./src/model/tinker",
+                    default=None,
                     help="define inference model path")
     ap.add_argument("-g", "--gait",
                     type=str,
                     default="legacy",
-                    choices=["legacy", "lip_play"],
-                    help="select gait adapter: legacy or lip_play")
+                    choices=["legacy", "bd_lip", "lip_play"],
+                    help="select gait adapter: legacy or bd_lip")
     args = ap.parse_args()
+
+    model_path = args.path
+    if model_path is None:
+        model_path = "./src/model/BipeD" if args.gait in {"bd_lip", "lip_play"} else "./src/model/tinker"
 
     rclpy.init()
 
@@ -30,7 +34,7 @@ def main():
         controller = GaitController(
             # adapter_type = args.object,
             device_type = args.device,
-            model_path = args.path,
+            model_path = model_path,
             gait_mode = args.gait
         )
 

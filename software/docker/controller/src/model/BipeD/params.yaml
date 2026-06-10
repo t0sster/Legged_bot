@@ -1,15 +1,17 @@
 TinkerCfg:
-  loop_frequency: 100
+  # BDLip policy was trained with a 50 Hz control loop:
+  # sim.dt = 0.005, decimation = 4 -> 0.02 s action period.
+  loop_frequency: 50
   joint_names:
     - "J_L0"
-    - "J_L1"
-    - "J_L2"
-    - "J_L3"
-    - "J_L4_ankle"
     - "J_R0"
+    - "J_L1"
     - "J_R1"
+    - "J_L2"
     - "J_R2"
+    - "J_L3"
     - "J_R3"
+    - "J_L4_ankle"
     - "J_R4_ankle"
 
   init_state:
@@ -18,20 +20,20 @@ TinkerCfg:
       J_L0: 0.0
       J_L1: 0.08
       J_L2: 0.56
-      J_L3: -1.12
-      J_L4_ankle: -0.57
+      J_L3: 1.12
+      J_L4_ankle: 0.57
       J_R0: 0.0
       J_R1: -0.08
       J_R2: -0.56
-      J_R3: 1.12
-      J_R4_ankle: 0.57
+      J_R3: -1.12
+      J_R4_ankle: -0.57
 
   control:
     stiffness: 25.0
     damping: 0.5
     # BDControllerCfg.control.actuation_scale = 1.0
-    action_scale_pos: 1.0
-    decimation: 10
+    action_scale_pos: 0.25
+    decimation: 4
     user_torque_limit: 60
 
   normalization:

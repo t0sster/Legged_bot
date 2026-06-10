@@ -1,5 +1,5 @@
 from rclpy.node import Node
-from .devices import BaseDevice, KeyboardDevice, GamepadDevice
+from .devices import BaseDevice, KeyboardDevice, GamepadDevice, FixedForwardDevice
 '''
 class AdapterFactory:
     
@@ -23,7 +23,8 @@ class InputDeviceFactory:
     
     _DEVICE_MAP = {
         'keyboard': KeyboardDevice,
-        'gamepad': GamepadDevice
+        'gamepad': GamepadDevice,
+        'fixed_forward': FixedForwardDevice,
     }
 
     @staticmethod

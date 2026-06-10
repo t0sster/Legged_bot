@@ -60,8 +60,17 @@ class InferenceController:
         self.user_cmd_cfg     = cfg['user_cmd_scales']
         self.loop_frequency   = cfg['loop_frequency']
 
+        # Action order follows the policy output / LowCmd packing order.
         self.init_joint_angles = np.array(
             [self.init_state[n] for n in self.joint_names], dtype=np.float32)
+
+        # Observation order follows the simulator / IsaacLab state order.
+        self.obs_joint_names = [
+            "J_L0", "J_L1", "J_L2", "J_L3", "J_L4_ankle",
+            "J_R0", "J_R1", "J_R2", "J_R3", "J_R4_ankle",
+        ]
+        self.init_joint_angles_obs = np.array(
+            [self.init_state[n] for n in self.obs_joint_names], dtype=np.float32)
 
         self.node.get_logger().info(
             f'Config loaded: obs_size={self.observations_size} '
@@ -83,8 +92,8 @@ class InferenceController:
         commands:            np.ndarray,   # (3,) [vx, vy, yaw_rate]
         foot_states_right:   np.ndarray,   # (4,) from BDKinematics
         foot_states_left:    np.ndarray,   # (4,)
-        step_cmd_right:      np.ndarray,   # (4,) from LIPMStepPlanner
-        step_cmd_left:       np.ndarray,   # (4,)
+        foot_target_right:   np.ndarray,   # (4,) from LIPMStepPlanner
+        foot_target_left:    np.ndarray,   # (4,)
         phase_sin:           float,
         phase_cos:           float,
         base_height_command: float | None = None,
@@ -92,7 +101,9 @@ class InferenceController:
         obs_layout:          str | None = None,
     ):
         try:
-            layout = obs_layout or self.observation_layout
+            layout = (obs_layout or self.observation_layout).lower()
+            if layout == 'lip_play':
+                layout = 'bd_lip'
             # Quaternion wxyz -> xyzw for scipy
             q_xyzw = np.array(
                 [imu_quat[1], imu_quat[2], imu_quat[3], imu_quat[0]],
@@ -117,7 +128,9 @@ class InferenceController:
 
             # Observation noise matching Isaac Lab training distribution (uniform, add)
             noisy_ang_vel  = base_ang_vel    + np.random.uniform(-0.2,  0.2,  3).astype(np.float32)
-            noisy_dof_pos  = joint_positions + np.random.uniform(-0.01, 0.01, 10).astype(np.float32)
+            # IsaacLab trains on joint_pos_rel, i.e. positions relative to the default pose.
+            joint_pos_rel = joint_positions - self.init_joint_angles_obs
+            noisy_dof_pos  = joint_pos_rel + np.random.uniform(-0.01, 0.01, 10).astype(np.float32)
             noisy_dof_vel  = joint_velocities + np.random.uniform(-1.5,  1.5,  10).astype(np.float32)
 
             # joint state
@@ -132,17 +145,15 @@ class InferenceController:
                     projected_gravity,      # 3
                     foot_states_right,      # 4
                     foot_states_left,       # 4
-                    step_cmd_right,         # 4
-                    step_cmd_left,          # 4
+                    foot_target_right,      # 4
+                    foot_target_left,       # 4
                     scaled_commands,        # 3
                     [phase_sin],            # 1
                     [phase_cos],            # 1
                     scaled_dof_pos,         # 10
                     scaled_dof_vel,         # 10
                 ]).astype(np.float32)
-            elif layout == 'lip_play':
-                step_right = step_cmd_right[:3].astype(np.float32)
-                step_left = step_cmd_left[:3].astype(np.float32)
+            elif layout == 'bd_lip':
                 if gait_phase is None:
                     gait_phase = np.array([phase_sin, phase_cos], dtype=np.float32)
                 if base_height_command is None:
@@ -153,8 +164,8 @@ class InferenceController:
                     projected_gravity,      # 3
                     foot_states_right,      # 4
                     foot_states_left,       # 4
-                    step_right,             # 4
-                    step_left,              # 4
+                    foot_target_right,      # 4
+                    foot_target_left,       # 4
                     scaled_commands,        # 3
                     [base_height_command],  # 1
                     gait_phase,             # 2
