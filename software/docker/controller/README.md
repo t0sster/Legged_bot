@@ -24,3 +24,6 @@ docker run -it --net host --ipc host --gpus all \
 
 For the LIPM-based policy, launch `inference_controller_setup.py` with `--gait bd_lip`
 and the default model path `./src/model/BipeD`.
+
+**Run logger if you need in new bash**
+```ros2 run plotjuggler plotjuggler```

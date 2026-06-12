@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     ros-${ROS_DISTRO}-ament-cmake \
     ros-${ROS_DISTRO}-ros-workspace \
     ros-${ROS_DISTRO}-pinocchio \
+    ros-${ROS_DISTRO}-plotjuggler \
+    ros-${ROS_DISTRO}-plotjuggler-ros \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages \

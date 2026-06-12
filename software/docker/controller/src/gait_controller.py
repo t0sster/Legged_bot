@@ -17,6 +17,20 @@ def _wrap_to_pi(angle: float) -> float:
     return float((angle + np.pi) % (2.0 * np.pi) - np.pi)
 
 
+LOWCMD_JOINT_NAMES = [
+    "J_L0",
+    "J_L1",
+    "J_L2",
+    "J_L3",
+    "J_L4_ankle",
+    "J_R0",
+    "J_R1",
+    "J_R2",
+    "J_R3",
+    "J_R4_ankle",
+]
+
+
 class BaseGaitAdapter(ABC):
     def __init__(self, node: Node, kinematics: BDKinematics, dt: float):
         self.node = node
@@ -298,6 +312,8 @@ class GaitController(Node):
 
         self.inference_controller = InferenceController(
             node=self, model_dir=model_path, robot_type='tinker')
+        self._action_joint_names = list(self.inference_controller.joint_names)
+        self._lowcmd_action_index = self._build_lowcmd_action_index()
 
         # Forward kinematics (Pinocchio)
         self.kinematics = BDKinematics()
@@ -336,6 +352,23 @@ class GaitController(Node):
 
         control_dt = 1.0 / loop_freq
         self.control_timer = self.create_timer(control_dt, self.control_loop)
+
+    def _build_lowcmd_action_index(self) -> list[int]:
+        """Map policy action order to LowCmd motor order by joint name."""
+        index_by_name = {name: idx for idx, name in enumerate(self._action_joint_names)}
+        missing = [name for name in LOWCMD_JOINT_NAMES if name not in index_by_name]
+        if missing:
+            raise ValueError(
+                f"Policy joint list does not cover LowCmd joints: missing={missing}, "
+                f"policy_order={self._action_joint_names}"
+            )
+
+        lowcmd_action_index = [index_by_name[name] for name in LOWCMD_JOINT_NAMES]
+        if self._action_joint_names != LOWCMD_JOINT_NAMES:
+            self.get_logger().info(
+                f"Policy action order {self._action_joint_names} -> LowCmd order {LOWCMD_JOINT_NAMES}"
+            )
+        return lowcmd_action_index
 
     def lowstate_callback(self, msg: LowState):
         imu = msg.imu_state
@@ -480,10 +513,15 @@ class GaitController(Node):
     def publish_lowcmd_action(self, action: np.ndarray):
         msg = LowCmd()
         msg.motor_cmd = [MotorCmd() for _ in range(10)]
+        kp = float(self.inference_controller.control_cfg['stiffness'])
+        kd = float(self.inference_controller.control_cfg['damping'])
 
-        for i in range(5):
-            msg.motor_cmd[i].position     = float(action[2 * i])
-            msg.motor_cmd[i + 5].position = float(action[2 * i + 1])
+        for low_idx, action_idx in enumerate(self._lowcmd_action_index):
+            msg.motor_cmd[low_idx].position = float(action[action_idx])
+            msg.motor_cmd[low_idx].velocity = 0.0
+            msg.motor_cmd[low_idx].torque = 0.0
+            msg.motor_cmd[low_idx].kp = kp
+            msg.motor_cmd[low_idx].kd = kd
 
         self.lowcmd_publisher.publish(msg)
 
