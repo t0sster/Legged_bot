@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y \
     ros-${ROS_DISTRO}-ament-cmake \
     ros-${ROS_DISTRO}-ros-workspace \
     ros-${ROS_DISTRO}-pinocchio \
-    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages \
@@ -40,9 +39,6 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
     cd /workspace/tinker_msgs && \
     colcon build --symlink-install
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-RUN chmod +x /workspace/inference_controller_setup.py
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["python3", "/workspace/inference_controller_setup.py"]
+CMD ["/bin/bash", "-c", "source /opt/ros/$ROS_DISTRO/setup.bash && source /workspace/tinker_msgs/install/setup.bash && exec python3 -m src.gait_controller"]

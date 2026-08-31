@@ -4,6 +4,7 @@ import os
 import time
 import rclpy
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from tinker_msgs.msg import LowState, LowCmd, MotorCmd
@@ -22,12 +23,17 @@ class MujocoSim(Node):
         self.velocities = np.zeros(10)
 
         self.actions = np.zeros(10)
-        self.init_ctrl = np.array([0.0, 0.08, 0.56, -1.12, -0.57, 0.0, -0.08, -0.56, 1.12, 0.57])
+        self.init_ctrl = np.array([0.0, 0.0, 0.45, 0.9, 0.45, 0.0, 0.0, -0.45, -0.9, -0.45])
         self.ctrl = self.init_ctrl.copy()
+        # Base freejoint height that puts the feet on the floor for init_ctrl's
+        # crouched pose (feet sit ~0.322m below the base at qpos[2]=0, floor at z=-0.40).
+        self.init_base_height = -0.078
+        self._last_time = 0.0
 
         self.IS_ACTIONS = False
-        
+
         self.model = mujoco.MjModel.from_xml_path(xml_path)
+        # self._apply_training_solver_settings(self.model)
         self.data = mujoco.MjData(self.model)
 
         self.ctrl_range = self.model.actuator_ctrlrange.copy()
@@ -52,8 +58,8 @@ class MujocoSim(Node):
     def cmd_callback(self, msg: LowCmd):
         cmd = [msg.motor_cmd[i].position for i in range(10)]
         for i in range(5):
-            self.actions[2 * i]     = cmd[i]
-            self.actions[2 * i + 1] = cmd[i + 5]
+            self.actions[i]     = cmd[i]
+            self.actions[i + 5] = cmd[i + 5]
         self.IS_ACTIONS = True
 
 
@@ -74,8 +80,24 @@ class MujocoSim(Node):
         self.state_publisher.publish(msg)
 
 
+    def apply_init_pose(self):
+        self.data.qpos[2] = self.init_base_height
+        self.data.qpos[7:17] = self.init_ctrl.copy()
+        self.data.ctrl[:] = self.init_ctrl.copy()
+        self.ctrl = self.init_ctrl.copy()
+        self.actions = self.init_ctrl.copy()
+        self.IS_ACTIONS = False
+        mujoco.mj_forward(self.model, self.data)
+
+
     def control_loop(self):
         try:
+            # The viewer's own Reset/Backspace resets data directly (outside this
+            # loop), which snaps sim time back to 0 and drops qpos/ctrl to the
+            # model's all-zero defaults. Catch that here and re-apply the crouched
+            # init pose instead of leaving the robot in its flat zero pose.
+            if self.data.time < self._last_time:
+                self.apply_init_pose()
 
             if not self.IS_ACTIONS:
                 # Manual mode: viewer sliders drive data.ctrl directly — don't overwrite.
@@ -87,12 +109,9 @@ class MujocoSim(Node):
 
             if self.data.qpos[2] < -0.35:
                 mujoco.mj_resetData(self.model, self.data)
-                self.data.qpos[7:17] = self.init_ctrl.copy()
-                self.data.ctrl[:] = self.init_ctrl.copy()
-                self.ctrl = self.init_ctrl.copy()
-                self.actions = self.init_ctrl.copy()
-                mujoco.mj_forward(self.model, self.data)
+                self.apply_init_pose()
             mujoco.mj_step(self.model, self.data)
+            self._last_time = self.data.time
 
             # Observations
             self.imu_quat = self.data.sensor('orientation').data.copy()  # [w, x, y, z]
@@ -100,11 +119,8 @@ class MujocoSim(Node):
             self.ang_vel = self.data.sensor('angular-velocity').data.copy()
             self.accel   = self.data.sensor('linear-acceleration').data.copy()
 
-            self.rpy = np.array([
-                np.arctan2(2 * (w * x + y * z), 1 - 2 * (x**2 + y**2)),
-                np.arcsin(np.clip(2 * (w * y - z * x), -1.0, 1.0)),
-                np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2))
-            ], dtype=np.float32)
+            # scipy wants the quaternion as [x, y, z, w], the IMU sensor gives [w, x, y, z].
+            self.rpy = R.from_quat([x, y, z, w]).as_euler('xyz', degrees=False).astype(np.float32)
        
             self.positions = self.data.qpos[7:17]
             self.velocities = self.data.qvel[6:16]
@@ -137,9 +153,7 @@ if __name__ == "__main__":
         # data = mujoco.MjData(model)
 
         mujoco_sim = MujocoSim(xml_path)
-        mujoco_sim.data.qpos[7:17] = mujoco_sim.init_ctrl.copy()
-        mujoco_sim.data.ctrl[:] = mujoco_sim.init_ctrl.copy()
-        mujoco.mj_forward(mujoco_sim.model, mujoco_sim.data)
+        mujoco_sim.apply_init_pose()
 
         executor = MultiThreadedExecutor()
         executor.add_node(mujoco_sim)

@@ -16,7 +16,7 @@
     </visual>
 
     <worldbody>
-        <geom name="floor" pos="0 0 -0.505" size="0 0 0.05" type="plane" material="grid" condim="3" friction="0.95 0.005 0.0001"/>
+        <geom name="floor" pos="0 0 -0.40" size="0 0 0.05" type="plane" material="grid" condim="3" friction="0.95 0.005 0.0001"/>
          
         <light castshadow="false" directional='true' diffuse='.3 .3 .3' specular='0.3 0.3 0.3' pos='-1 -1 1'
                dir='1 1 -1'/>
