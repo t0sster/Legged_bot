@@ -5,6 +5,7 @@ from rclpy.node import Node
 
 from .factories import InputDeviceFactory
 from .inference_controller import InferenceController
+from .data_logger import RunLogger
 from tinker_msgs.msg import LowState, LowCmd, MotorCmd
 
 
@@ -34,6 +35,7 @@ class GaitController(Node):
         loop_freq = float(self.inference_controller.loop_frequency)
 
         # Sensor state
+        self.imu_quat  = np.array([1., 0., 0., 0.], dtype=np.float32)  # wxyz
         self.ang_vel   = np.zeros(3, dtype=np.float32)
         self.accel     = np.zeros(3, dtype=np.float32)
         self.rpy       = np.zeros(3, dtype=np.float32)
@@ -43,6 +45,8 @@ class GaitController(Node):
 
         self.first_state_received = False
         self._step_count = 0
+
+        self.logger = RunLogger()
 
         self.lowstate_subscriber = self.create_subscription(
             LowState, '/low_level_state', self.lowstate_callback, 10)
@@ -54,6 +58,7 @@ class GaitController(Node):
 
     def lowstate_callback(self, msg: LowState):
         imu = msg.imu_state
+        self.imu_quat  = np.array(imu.quaternion,    dtype=np.float32)  # wxyz
         self.ang_vel   = np.array(imu.gyroscope,     dtype=np.float32)
         self.accel     = np.array(imu.accelerometer, dtype=np.float32)
         self.rpy       = np.array(imu.rpy,           dtype=np.float32)
@@ -97,6 +102,16 @@ class GaitController(Node):
 
             q_des = (actions * self.inference_controller.control_cfg['action_scale_pos']
                         + self.inference_controller.init_joint_angles)
+
+            self.logger.log_step(
+                step=self._step_count,
+                sent_command=q_des,
+                motor_positions=self.positions,
+                imu_quat=self.imu_quat,
+                imu_rpy=self.rpy,
+                imu_gyro=self.ang_vel,
+                imu_accel=self.accel,
+            )
 
             self.publish_lowcmd_action(q_des)
 
@@ -143,6 +158,7 @@ class GaitController(Node):
 
     def shutdown(self):
         # self.device.shutdown()
+        self.logger.finalize()
         self.destroy_node()
 
 

@@ -29,7 +29,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pynput \
     onnxruntime \
     scipy \
-    pyyaml
+    pyyaml \
+    matplotlib
 
 WORKDIR /workspace
 
