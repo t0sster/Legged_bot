@@ -2,6 +2,7 @@ import mujoco
 import mujoco.viewer
 import os
 import time
+from collections import deque
 import rclpy
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -23,12 +24,20 @@ class MujocoSim(Node):
         self.velocities = np.zeros(10)
 
         self.actions = np.zeros(10)
-        self.init_ctrl = np.array([0.0, 0.0, 0.45, 0.9, 0.45, 0.0, 0.0, -0.45, -0.9, -0.45])
+        # TinkerRobotCfg.initial_joint_pos (biped-mjrl, assets/zoo/robots/tinker/mjlab_cfg.py).
+        self.init_ctrl = np.array([0.0, 0.0, 0.85, 1.5, 0.65, 0.0, 0.0, -0.85, -1.5, -0.65])
         self.ctrl = self.init_ctrl.copy()
-        # Base freejoint height that puts the feet on the floor for init_ctrl's
-        # crouched pose (feet sit ~0.322m below the base at qpos[2]=0, floor at z=-0.40).
-        self.init_base_height = -0.078
+        # TinkerRobotCfg.initial_root_pos z=0.3 above the plane; floor here is at z=-0.40.
+        self.init_base_height = -0.10
         self._last_time = 0.0
+
+        # TinkerMotorCfg.encoder_bias: training observes q + bias and drives the
+        # joint to target - bias.
+        self.encoder_bias = np.array([0.0034, -0.0900, 0.0194, -0.0050, 0.0089,
+                                      0.0034, -0.0900, 0.0194, -0.0050, 0.0089])
+        # TinkerRobotCfg.motor_command_delay_s 0.03595 / physics dt 0.002 -> 18 steps.
+        self.delay_steps = 18
+        self._ctrl_buffer = deque(maxlen=self.delay_steps + 1)
 
         self.IS_ACTIONS = False
 
@@ -36,7 +45,15 @@ class MujocoSim(Node):
         # self._apply_training_solver_settings(self.model)
         self.data = mujoco.MjData(self.model)
 
-        self.ctrl_range = self.model.actuator_ctrlrange.copy()
+        # Base COM shift [x forward, y left, z up] in m, base_link frame. Training
+        # (base_pseudo_inertia, t_range) shifts the "torso" COM by up to +-0.10 m per
+        # axis, mass and inertia about the COM unchanged. torso is base_link rotated
+        # 180 deg about z, so the shift in the torso frame is (-x, -y, z).
+        self.declare_parameter('base_com_offset', [0.0, 0.0, 0.0])
+        com_offset = np.array(self.get_parameter('base_com_offset').value, dtype=float)
+        self.model.body_ipos[self.model.body('torso').id] += com_offset * [-1.0, -1.0, 1.0]
+        mujoco.mj_setConst(self.model, self.data)
+        self.get_logger().info(f'Base COM offset (base_link frame): {com_offset.tolist()} m')
 
         self.cmd_subscriber = self.create_subscription(
             LowCmd,
@@ -60,6 +77,13 @@ class MujocoSim(Node):
         for i in range(5):
             self.actions[i]     = cmd[i]
             self.actions[i + 5] = cmd[i + 5]
+
+        # Position actuator: force = kp * (ctrl - q) - kd * dq.
+        kp = np.array([msg.motor_cmd[i].kp for i in range(10)])
+        kd = np.array([msg.motor_cmd[i].kd for i in range(10)])
+        self.model.actuator_gainprm[:, 0] = kp
+        self.model.actuator_biasprm[:, 1] = -kp
+        self.model.actuator_biasprm[:, 2] = -kd
         self.IS_ACTIONS = True
 
 
@@ -76,6 +100,7 @@ class MujocoSim(Node):
         for i in range(10):
             msg.motor_state[i].position = float(self.positions[i])
             msg.motor_state[i].velocity = float(self.velocities[i])
+            msg.motor_state[i].torque = float(self.data.actuator_force[i])
 
         self.state_publisher.publish(msg)
 
@@ -86,6 +111,7 @@ class MujocoSim(Node):
         self.data.ctrl[:] = self.init_ctrl.copy()
         self.ctrl = self.init_ctrl.copy()
         self.actions = self.init_ctrl.copy()
+        self._ctrl_buffer.clear()
         self.IS_ACTIONS = False
         mujoco.mj_forward(self.model, self.data)
 
@@ -104,7 +130,9 @@ class MujocoSim(Node):
                 # Sync self.ctrl so there's no jump when policy takes over.
                 self.ctrl = self.data.ctrl.copy()
             else:
-                self.ctrl = np.clip(self.actions, self.ctrl_range[:, 0], self.ctrl_range[:, 1])
+                # No ctrl clipping: training actuators are ctrllimited=False.
+                self._ctrl_buffer.append(self.actions - self.encoder_bias)
+                self.ctrl = self._ctrl_buffer[0]
                 self.data.ctrl[:] = self.ctrl
 
             if self.data.qpos[2] < -0.35:
@@ -122,7 +150,7 @@ class MujocoSim(Node):
             # scipy wants the quaternion as [x, y, z, w], the IMU sensor gives [w, x, y, z].
             self.rpy = R.from_quat([x, y, z, w]).as_euler('xyz', degrees=False).astype(np.float32)
        
-            self.positions = self.data.qpos[7:17]
+            self.positions = self.data.qpos[7:17] + self.encoder_bias
             self.velocities = self.data.qvel[6:16]
             
             self.publish_state()

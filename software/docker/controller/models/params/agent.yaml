@@ -1,13 +1,13 @@
 seed: 42
 num_steps_per_env: 24
-max_iterations: 5001
+max_iterations: 27500
 obs_groups:
   actor: !!python/tuple
   - actor
   critic: !!python/tuple
   - critic
-save_interval: 100
-experiment_name: tinker
+save_interval: 500
+experiment_name: tinker_upd
 run_name: ''
 logger: tensorboard
 wandb_project: mjlab
@@ -20,7 +20,7 @@ upload_model: false
 class_name: OnPolicyRunner
 actor:
   hidden_dims: !!python/tuple
-  - 256
+  - 512
   - 256
   - 128
   activation: elu
@@ -28,7 +28,7 @@ actor:
   cnn_cfg: null
   distribution_cfg:
     class_name: GaussianDistribution
-    init_std: 0.7
+    init_std: 1.0
     std_type: scalar
   rnn_type: null
   rnn_hidden_dim: 256
@@ -54,7 +54,7 @@ algorithm:
   schedule: adaptive
   gamma: 0.99
   lam: 0.95
-  entropy_coef: 0.0085
+  entropy_coef: 0.01
   desired_kl: 0.01
   max_grad_norm: 1.0
   value_loss_coef: 1.0

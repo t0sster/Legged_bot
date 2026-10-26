@@ -1,0 +1,161 @@
+<mujocoinclude>
+    <body name="base_link" pos="0 0 0" quat="1 0 0 0">
+        <freejoint name="floating_base_joint" />
+        <!-- base_link itself carries no geoms (all real mass is on "torso"
+             below); MuJoCo requires a nonzero mass/inertia on any body with
+             its own DOFs (the freejoint), so give it a negligible one. -->
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-6 1e-6 1e-6" />
+
+        <body name="torso" quat="0 0 0 1">
+            <inertial 
+                pos="-20e-03 2.2e-03 20.6e-03" 
+                mass="1.524" 
+                diaginertia="9.884e-3 0.01 0.01"/>
+            <geom type="mesh" contype="0" conaffinity="0" group="4" rgba="1 1 1 1" mesh="base_link"/>
+            <geom name="base_collision" mass="0" type="box" size="0.11 0.07 0.05" pos="0 0 0.03" contype="0" conaffinity="1" group="3" rgba="0.5 0.5 0.5 0.25"/>
+            <site name="imu" type="sphere" size=".005" pos="0.009 -0.0075 0.1" quat="0.7071067811865475 0 0 0.7071067811865475" rgba="1 0 0 1"/>
+            <body name="actuators_yaw" pos="0 0 -.0085">
+                <geom type="cylinder" size="0.038 0.017" zaxis="0 0 -1" mass="0.344" contype="0" conaffinity="1" rgba="1 0 0 .1" group="4"  pos="2.5e-03 53.5e-03 81.1e-03"/>
+                <geom type="cylinder" size="0.038 0.017" zaxis="0 0 -1" mass="0.344" contype="0" conaffinity="1" rgba="1 0 0 .1" group="4"  pos="2.5e-03 -53.5e-03 81.1e-03"/>
+            </body>
+
+            <body name="link_l_yaw" pos="0.0 -0.053301 0.056145">
+                <joint name="joint_l_yaw" pos="0 0 0" axis="0 0 -1" limited="true" range="-0.5 0.5" armature="0.0001" frictionloss="0.06376" damping="0.00015" />
+                <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.047" rgba="1 1 1 1" mesh="link_r_pelvis-1" quat="0 -1 0 0"/>
+                <site name="sensor_site_left" pos="0 0 -.05" size="0.005" rgba="0 1 0 1"/>
+               
+                <body name="actuator_roll" pos="-0.003 0 -0.055">
+                    <joint name="joint_l_roll" pos="0 0 0" axis="1 0 0" limited="true" range="-0.3 0.3" armature="0.02428" frictionloss="0.20956" damping="0.00055" />
+                    <!-- DM-8006 motor: radius 0.048, half-height 0.02, mass 0.559 (see one_actuator_8006.xml) -->
+                    <geom type="cylinder" size="0.048 0.0185" zaxis="-1 0 0" mass="0.565" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+                    <!-- <geom type="cylinder" size="0.02" fromto="0 0 0 -0.002884 0.053699 -0.010429" mass="0.225" rgba="0.89804 0.91765 0.92941 1" /> -->
+                    <body name="link_l_roll" pos="0.016 0 -0.035" quat="0 0 1 0">
+                        <!-- деталь жёстко прикреплена к actuator_roll: собственного joint нет -->
+                        <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" mesh="link_l_roll" /> -->
+                        <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.085" rgba="1 1 1 1" mesh="link_l_pelvis-2_mirror_y" quat="0 0 0.707 0.707" pos="0 0.0223 -0.01783"/>
+
+                        <body name="actuator_hip" pos="0.01 -0.075 -0.014" quat="0 0 1 0">
+                            <joint name="joint_l_pitch" pos="0 0 0" axis="0 -1 0" limited="true" range="-1.6 2.0" armature="0.01508" frictionloss="0.20281" damping="0.20577" />
+                            <!-- placeholder motor: radius 0.048, half-height 0.02, mass 0.5 (TBD) -->
+                            <geom type="cylinder" size="0.048 0.0185" zaxis="0 -1 0" mass="0.565" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                            <body name="link_l_pitch" pos="0.0001 -0.004 -0.000313" quat="0 0 0 1">
+                                <!-- деталь жёстко прикреплена к actuator_hip: собственного joint нет -->
+                                <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1" mesh="link_l_pitch" /> -->
+                                <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.084" rgba="1 1 1 1" mesh="link_r_thigh"
+                                    quat="1 0 0 0"
+                                    pos="-0.0132 0.014 0.00956"/>
+                                <geom name="left_thigh_collision" mass="0" type="cylinder" size="0.02 0.060"
+                                    pos="0 0.005 -0.06" contype="0" conaffinity="1" group="3"
+                                    rgba="0.79216 0.81961 0.93333 0.25" />
+
+                                <body name="actuator_knee" pos="0 -0.004 -0.14738">
+                                    <joint name="joint_l_knee" pos="0 0 0" axis="0 -1 0" limited="true" range="-2.2 2.2" armature="0.00716" frictionloss="0.108" damping="0.12399" />
+                                    <!-- placeholder motor: radius 0.048, half-height 0.0185, mass 0.5 (TBD) -->
+                                    <geom type="cylinder" size="0.048 0.0185" zaxis="0 1 0" mass="0.566" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                                    <body name="link_l_knee" pos="0 -0.0045 0">
+                                    <!-- деталь жёстко прикреплена к actuator_knee: собственного joint нет -->
+                                    <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" mesh="link_l_knee" /> -->
+                                    <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.047" rgba="1 1 1 1" mesh="link_l_shin"
+                                    quat="0.5 0.5 -0.5 -0.5"
+                                    pos="0.0184 -0.014 -0.01"/>
+                                    <geom name="left_shank_collision" mass="0" type="cylinder" size="0.022 0.060"
+                                        pos="0 0 -0.071" contype="0" conaffinity="1" group="3"
+                                        rgba="1 1 1 0.25" />
+
+                                    <body name="actuator_ankle" pos="0 -0.005 -0.14149">
+                                        <joint name="joint_l_ankle" pos="0 0 0" axis="0 1 0" limited="true" range="-1.2 1.2" armature="0.0001" frictionloss="0.05319" damping="0.02544" />
+                                        <!-- placeholder motor: radius 0.038, half-height 0.01825, mass 0.5 (TBD) -->
+                                        <geom type="cylinder" size="0.038 0.017" zaxis="0 -1 0" mass="0.344" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                                        <body name="link_l_ankle" pos="0 0.005 0">
+                                            <!-- деталь жёстко прикреплена к actuator_ankle: собственного joint нет -->
+                                            <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.063" rgba="1 1 1 1" mesh="link_l_ankle" />
+                                            <geom name="left_foot_collision" mass="0" type="box"
+                                                size="0.07 0.025 0.009" pos="0.015 0 -0.040"
+                                                friction="0.8 0.005 0.0001" condim="3"
+                                                contype="0" conaffinity="1" group="3"
+                                                rgba="1 1 1 0.25" />
+                                            <site name="left_foot" size="0.008" pos="0.015 0 -0.049" />
+                                        </body>
+                                    </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                        </body>
+                    </body>
+                </body>
+
+            <body name="link_r_yaw" pos="0.0 0.053425 0.056145">
+                <joint name="joint_r_yaw" pos="0 0 0" axis="0 0 -1" limited="true" range="-0.5 0.5" armature="0.0001" frictionloss="0.06376" damping="0.00015" />
+                <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" mesh="link_r_yaw" /> -->
+                <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.047" rgba="1 1 1 1" mesh="link_l_pelvis-1" quat="0 1 0 0"/>
+                <site name="sensor_site_right" pos="0 0 -.05" size="0.005" rgba="0 1 0 1"/>
+
+                <body name="actuator_r_roll" pos="-0.003 0 -0.055">
+                    <joint name="joint_r_roll" pos="0 0 0" axis="1 0 0" limited="true" range="-0.3 0.3" armature="0.02428" frictionloss="0.20956" damping="0.00055" />
+                    <!-- DM-8006 motor: radius 0.048, half-height 0.02, mass 0.559 (see one_actuator_8006.xml) -->
+                    <geom type="cylinder" size="0.048 0.0185" zaxis="-1 0 0" mass="0.565" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+                    <body name="link_r_roll" pos="0.016 0 -0.035" quat="0 0 1 0">
+                    <!-- деталь жёстко прикреплена к actuator_r_roll: собственного joint нет -->
+                    <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" mesh="link_r_roll" /> -->
+                    <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.085" rgba="1 1 1 1" mesh="link_r_pelvis-2_mirror_y" quat="0 0 0.707 0.707" pos="0 -0.0223 -0.01783"/>
+
+                    <body name="actuator_r_hip" pos="0.01 0.075 -0.014" quat="0 0 1 0">
+                        <joint name="joint_r_pitch" pos="0 0 0" axis="0 1 0" limited="true" range="-2.0 1.6" armature="0.01508" frictionloss="0.20281" damping="0.20577" />
+                        <!-- placeholder motor: radius 0.048, half-height 0.02, mass 0.5 (TBD) -->
+                        <geom type="cylinder" size="0.048 0.0185" zaxis="0 1 0" mass="0.565" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                        <body name="link_r_pitch" pos="0.0001 0.004 -0.000313" quat="0 0 0 1">
+                        <!-- деталь жёстко прикреплена к actuator_r_hip: собственного joint нет -->
+                        <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1" mesh="link_r_pitch" /> -->
+                        <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.084" rgba="1 1 1 1" mesh="link_l_thigh"
+                              quat="1 0 0 0"
+                              pos="-0.0132 -0.014 0.00956"/>
+                        <geom name="right_thigh_collision" mass="0" type="cylinder" size="0.02 0.060"
+                              pos="0 -0.005 -0.06" contype="0" conaffinity="1" group="3"
+                              rgba="0.79216 0.81961 0.93333 0.25" />
+
+                        <body name="actuator_r_knee" pos="0 0.004 -0.14738">
+                            <joint name="joint_r_knee" pos="0 0 0" axis="0 1 0" limited="true" range="-2.2 2.2" armature="0.00716" frictionloss="0.108" damping="0.12399" />
+                            <!-- placeholder motor: radius 0.048, half-height 0.0185, mass 0.5 (TBD) -->
+                            <geom type="cylinder" size="0.048 0.0185" zaxis="0 -1 0" mass="0.566" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                            <body name="link_r_knee" pos="0 0.0045 0">
+                            <!-- деталь жёстко прикреплена к actuator_r_knee: собственного joint нет -->
+                            <!-- <geom type="mesh" contype="0" conaffinity="0" group="1" rgba="1 1 1 1" mesh="link_r_knee" /> -->
+                            <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.047" rgba="1 1 1 1" mesh="link_r_shin"
+                              quat="0.5 0.5 -0.5 -0.5"
+                              pos="0.0184 0.014 -0.01"/>
+                            <geom name="right_shank_collision" mass="0" type="cylinder" size="0.022 0.060"
+                                  pos="0 0 -0.071" contype="0" conaffinity="1" group="3"
+                                  rgba="1 1 1 0.25" />
+
+                            <body name="actuator_r_ankle" pos="0 0.005 -0.14149">
+                                <joint name="joint_r_ankle" pos="0 0 0" axis="0 -1 0" limited="true" range="-1.2 1.2" armature="0.0001" frictionloss="0.05319" damping="0.02544" />
+                                <!-- placeholder motor: radius 0.038, half-height 0.01825, mass 0.5 (TBD) -->
+                                <geom type="cylinder" size="0.038 0.017" zaxis="0 1 0" mass="0.344" contype="0" conaffinity="1" rgba="1 0 0 1" group="4" />
+
+                                <body name="link_r_ankle" pos="0 -0.005 0">
+                                <!-- деталь жёстко прикреплена к actuator_r_ankle: собственного joint нет -->
+                                <geom type="mesh" contype="0" conaffinity="0" group="4" mass="0.063" rgba="1 1 1 1" mesh="link_r_ankle" />
+                                <geom name="right_foot_collision" mass="0" type="box"
+                                      size="0.07 0.025 0.009" pos="0.015 0 -0.040"
+                                      friction="0.8 0.005 0.0001" condim="3"
+                                      contype="0" conaffinity="1" group="3"
+                                      rgba="1 1 1 0.25" />
+                                <site name="right_foot" size="0.008" pos="0.015 0 -0.049" />
+                                </body>
+                            </body>
+                            </body>
+                        </body>
+                        </body>
+                    </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+    </body>
+</mujocoinclude>

@@ -42,4 +42,6 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
 
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-CMD ["/bin/bash", "-c", "source /opt/ros/$ROS_DISTRO/setup.bash && source /workspace/tinker_msgs/install/setup.bash && exec python3 -m src.gait_controller"]
+# Arguments of `docker run <image> ...` go to the controller, e.g. `--sim --vel 0.1 0 0`
+# or `--real --ros-args -p kp:=40.0 -p kd:=1.0` ("--" below becomes $0 of bash -c).
+ENTRYPOINT ["/bin/bash", "-c", "source /opt/ros/$ROS_DISTRO/setup.bash && source /workspace/tinker_msgs/install/setup.bash && exec python3 -m src.gait_controller \"$@\"", "--"]

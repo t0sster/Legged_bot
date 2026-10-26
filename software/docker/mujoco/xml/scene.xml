@@ -1,7 +1,9 @@
 <mujocoinclude>
     <!-- <option timestep='0.001' iterations="500000000" tolerance="1e-10" solver="Newton" jacobian="dense" cone="elliptic"/> -->
     <!-- <option timestep='0.001' tolerance="1e-10" solver="Newton" jacobian="dense" cone="elliptic"/> -->
-    <option timestep='0.001' tolerance="1e-10" integrator="implicitfast" solver="Newton" jacobian="dense" cone="elliptic"/>    
+    <!-- <option timestep='0.001' tolerance="1e-10" integrator="implicitfast" solver="Newton" jacobian="dense" cone="elliptic"/> -->
+    <!-- mjlab MujocoCfg of the tinker_upd run (params/env.yaml, sim.mujoco) -->
+    <option timestep='0.002' integrator="implicitfast" solver="Newton" iterations="10" tolerance="1e-8" ls_iterations="20" ls_tolerance="0.01" jacobian="auto" cone="pyramidal" impratio="1"/>
     <!-- <option timestep='0.001' integrator="implicitfast" solver="Newton" jacobian="dense" cone="elliptic"/>     -->
     <asset>
         <texture type="skybox" builtin="gradient" rgb1=".3 .5 .7" rgb2="0 0 0" width="512" height="512"/>

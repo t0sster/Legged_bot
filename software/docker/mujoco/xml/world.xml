@@ -3,20 +3,20 @@
   <include file="dependencies.xml" />
 
   <worldbody>
-    <include file="tinker_range.xml" />
+    <include file="tinker.xml" />
   </worldbody>
 
   <actuator>
-    <position name="joint_l_yaw" 	joint="joint_l_yaw" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-6.0 6.0" ctrlrange="-0.5 0.5" />
-    <position name="joint_l_roll" 	joint="joint_l_roll" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-0.3 0.3" />
-    <position name="joint_l_pitch" 	joint="joint_l_pitch" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-1.6 2.0" />
-    <position name="joint_l_knee" 	joint="joint_l_knee" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-2.2 2.2" />
-    <position name="joint_l_ankle" 	joint="joint_l_ankle" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-6.0 6.0" ctrlrange="-1.2 1.2" />
-    <position name="joint_r_yaw" 	joint="joint_r_yaw" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-6.0 6.0" ctrlrange="-0.5 0.5" />
-    <position name="joint_r_roll" 	joint="joint_r_roll" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-0.3 0.3" />
-    <position name="joint_r_pitch" 	joint="joint_r_pitch" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-2.0 1.6" />
-    <position name="joint_r_knee" 	joint="joint_r_knee" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-10.0 10.0" ctrlrange="-2.2 2.2" />
-    <position name="joint_r_ankle" 	joint="joint_r_ankle" 	gear="1" ctrllimited="true" kp="15" kv="0.65" forcelimited="true" forcerange="-6.0 6.0" ctrlrange="-1.2 1.2" />
+    <position name="joint_l_yaw" 	joint="joint_l_yaw" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-12.0 12.0" />
+    <position name="joint_l_roll" 	joint="joint_l_roll" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_l_pitch" 	joint="joint_l_pitch" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_l_knee" 	joint="joint_l_knee" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_l_ankle" 	joint="joint_l_ankle" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-12.0 12.0" />
+    <position name="joint_r_yaw" 	joint="joint_r_yaw" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-12.0 12.0" />
+    <position name="joint_r_roll" 	joint="joint_r_roll" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_r_pitch" 	joint="joint_r_pitch" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_r_knee" 	joint="joint_r_knee" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-20.0 20.0" />
+    <position name="joint_r_ankle" 	joint="joint_r_ankle" 	gear="1" ctrllimited="false" kp="40" kv="1.0" forcelimited="true" forcerange="-12.0 12.0" />
   </actuator>
 
   <sensor>
